@@ -5,56 +5,124 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.activity.addCallback
+import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.shopverse.R
+import com.example.shopverse.data.local.product.ProductDao
+import com.example.shopverse.data.local.product.ProductDatabase
+import com.example.shopverse.databinding.FragmentHomeBinding
+import com.example.shopverse.domain.repo.product.ProductRepository
 
-// TODO: Rename parameter arguments, choose names that match
-// the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-private const val ARG_PARAM1 = "param1"
-private const val ARG_PARAM2 = "param2"
 
-/**
- * A simple [Fragment] subclass.
- * Use the [HomeFragment.newInstance] factory method to
- * create an instance of this fragment.
- */
+import com.bumptech.glide.Glide
+import com.example.shopverse.data.local.user.UserDatabase
+import com.example.shopverse.data.remote.ProductModule
+import com.example.shopverse.domain.repo.user.UserRepository
+import com.example.shopverse.presentation.entry.NavigationDestination
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 class HomeFragment : Fragment() {
-    // TODO: Rename and change types of parameters
-    private var param1: String? = null
-    private var param2: String? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        arguments?.let {
-            param1 = it.getString(ARG_PARAM1)
-            param2 = it.getString(ARG_PARAM2)
-        }
-    }
+    private lateinit var viewModel: HomeVM
+    private lateinit var productAdapter: VerticalHomeAdapter
+
+    private var _binding: FragmentHomeBinding? = null
+    private val binding get() = _binding!!
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
-        // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_home, container, false)
+    ): View {
+        _binding = FragmentHomeBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
-    companion object {
-        /**
-         * Use this factory method to create a new instance of
-         * this fragment using the provided parameters.
-         *
-         * @param param1 Parameter 1.
-         * @param param2 Parameter 2.
-         * @return A new instance of fragment HomeFragment.
-         */
-        // TODO: Rename and change types and number of parameters
-        @JvmStatic
-        fun newInstance(param1: String, param2: String) =
-            HomeFragment().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_PARAM1, param1)
-                    putString(ARG_PARAM2, param2)
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val userRepository =
+            UserRepository(UserDatabase.getUserDatabase(requireContext()).userDao())
+        val productRepository =
+            ProductRepository(ProductDatabase.getProductDatabase(requireContext()).productDao())
+        val viewModelFactory = ProductViewModelFactory(productRepository, userRepository)
+        viewModel = ViewModelProvider(this, viewModelFactory)[HomeVM::class.java]
+        viewModel.loggedInUserName.observe(viewLifecycleOwner) { username ->
+            binding.tvUser.text = username ?: "Guest"
+        }
+
+        viewModel.fetchLoggedInUserName()
+        binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 2)
+        productAdapter = VerticalHomeAdapter(emptyList(),
+            onFavoriteClick = { product ->
+                if (product.isFavorite) {
+                    viewModel.removeProductFromFavorites(product)
+                } else {
+                    viewModel.addProductToFavorites(product)
                 }
+            },
+            onItemClick = { product ->
+                val action = HomeFragmentDirections.actionHomeFragmentToItemFragment(
+                    images = product.images.toTypedArray(),
+                    title = product.title,
+                    description = product.description,
+                    category = product.category,
+                    availabilityStatus = product.availabilityStatus,
+                    discountPercentage = product.discountPercentage.toFloat(),
+                    price = product.price.toFloat(),
+                    warrantyInformation = product.warrantyInformation,
+                    stock = product.stock,
+                    rating = product.rating.toFloat(),
+                    weight = product.weight,
+                    navigationSource = NavigationDestination.HomeFragment
+                )
+                findNavController().navigate(action)
             }
+        )
+
+        viewModel.products.observe(viewLifecycleOwner) { products ->
+            if (products.isNullOrEmpty()) {
+                binding.emptyStateContainer.visibility = View.VISIBLE
+
+            } else {
+                binding.emptyStateContainer.visibility = View.GONE
+                productAdapter.updateProducts(products)
+            }
+        }
+
+
+        binding.recyclerView.adapter = productAdapter
+
+        viewModel.fetchProducts()
+        requireActivity().onBackPressedDispatcher.addCallback(){
+            showExitDialog()
+        }
+
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
+    }
+
+    private fun showExitDialog() {
+        AlertDialog.Builder(requireContext()).apply {
+            setTitle("Exit App")
+            setMessage("Are you sure you want to exit?")
+            setPositiveButton("Exit") { _, _ ->
+                requireActivity().finish()
+            }
+            setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+            setCancelable(true)
+            show()
+        }
     }
 }

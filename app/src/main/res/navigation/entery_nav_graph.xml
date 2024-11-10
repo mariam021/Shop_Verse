@@ -38,7 +38,7 @@
     </fragment>
     <fragment
         android:id="@+id/loginFragment"
-        android:name="com.example.shopverse.presentation.login.LogInFragment"
+        android:name="com.example.shopverse.presentation.login.LoginFragment"
         android:label="fragment_log_in"
         tools:layout="@layout/fragment_log_in" >
         <action
